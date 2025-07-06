@@ -37,6 +37,7 @@ declare module "next-auth/jwt" {
       phone?: string;
       bookings?: any[];
       reviews?: any[];
+      role?: string;
     };
     backendPartner?: {
       partnerId: string;
