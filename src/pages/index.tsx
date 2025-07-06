@@ -180,7 +180,7 @@ export default function Main() {
       <div className="max-w-7xl mx-auto px-4 py-6">
         {/* Hero Banner */}
         <div
-          className="relative mb-8 rounded-xl overflow-hidden h-48 md:h-64 lg:h-72 cursor-pointer"
+          className="relative mb-8 rounded-xl overflow-hidden h-72 md:h-64 lg:h-72 cursor-pointer"
           onClick={() => setShowMap(true)}
         >
           {/* Map kecil di Hero */}
@@ -226,7 +226,7 @@ export default function Main() {
         )}
 
         {/* Product Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {rentals.map((rental) => (
             <CardLayout
               key={rental.rentalId}

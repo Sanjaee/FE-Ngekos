@@ -8,6 +8,8 @@ import { DefaultSession } from "next-auth";
 declare module "next-auth" {
   interface User {
     backendUser?: any;
+    backendPartner?: any;
+    userType?: "user" | "partner";
   }
   interface Session {
     user: {
@@ -15,6 +17,8 @@ declare module "next-auth" {
       username?: string;
       profilePic?: string;
       backendUser?: any;
+      backendPartner?: any;
+      userType?: "user" | "partner";
       bookings?: any[];
       reviews?: any[];
       phone?: string;
@@ -34,6 +38,19 @@ declare module "next-auth/jwt" {
       bookings?: any[];
       reviews?: any[];
     };
+    backendPartner?: {
+      partnerId: string;
+      username: string;
+      email: string;
+      profilePic?: string;
+      phone?: string;
+      businessName?: string;
+      isVerified: boolean;
+      subscriptionStatus: string;
+      paidAmount: number;
+      maxRooms: number;
+    };
+    userType?: "user" | "partner";
     jwtToken?: string;
   }
 }
@@ -58,7 +75,40 @@ export default NextAuth({
 
       if (account.provider === "google") {
         try {
-          const response = await axios.post(
+          // For now, we'll use a simple approach - always try partner first, then user
+          // In a real implementation, you might want to use a custom provider or different approach
+          let isPartnerSignIn = false;
+
+          // Try partner sign-in first
+          try {
+            const partnerResponse = await axios.post(
+              `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/signin-google-partner`,
+              {
+                googleId: account.providerAccountId,
+                email: user.email,
+                name: user.name,
+                image: user.image,
+              },
+              {
+                timeout: 5000,
+                headers: {
+                  "Content-Type": "application/json",
+                },
+              }
+            );
+
+            if (partnerResponse.data.success && partnerResponse.data.partner) {
+              user.backendPartner = partnerResponse.data.partner;
+              user.userType = "partner";
+              return true;
+            }
+          } catch (partnerError) {
+            // Partner sign-in failed, try user sign-in
+            console.log("Partner sign-in failed, trying user sign-in");
+          }
+
+          // Try user sign-in as fallback
+          const userResponse = await axios.post(
             `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/signin-google`,
             {
               googleId: account.providerAccountId,
@@ -74,8 +124,9 @@ export default NextAuth({
             }
           );
 
-          if (response.data.success && response.data.user) {
-            user.backendUser = response.data.user;
+          if (userResponse.data.success && userResponse.data.user) {
+            user.backendUser = userResponse.data.user;
+            user.userType = "user";
             return true;
           } else {
             console.error("Backend did not return success or user data");
@@ -99,28 +150,40 @@ export default NextAuth({
 
     async jwt({ token, user, account }) {
       if (account && user) {
-        // Simpan data dari signin-google langsung
-        token.backendUser = user.backendUser;
+        if (user.userType === "partner" && user.backendPartner) {
+          token.backendPartner = user.backendPartner;
+          token.userType = "partner";
+        } else if (user.backendUser) {
+          token.backendUser = user.backendUser;
+          token.userType = "user";
+        }
 
         // Generate JWT token from Express backend after successful Google login
-        if (user.backendUser) {
+        if (user.backendUser || user.backendPartner) {
           try {
-            // Create a session in Express backend to get JWT token
-            const sessionResponse = await axios.post(
-              `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/create-session`,
-              {
-                userId: user.backendUser.userId,
-                email: user.backendUser.email,
-              },
-              {
-                headers: {
-                  "Content-Type": "application/json",
-                },
-              }
-            );
+            const userData = user.backendUser || user.backendPartner;
+            const userType = user.userType;
 
-            if (sessionResponse.data.success && sessionResponse.data.token) {
-              token.jwtToken = sessionResponse.data.token;
+            if (userData) {
+              // Create a session in Express backend to get JWT token
+              const sessionResponse = await axios.post(
+                `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/create-session`,
+                {
+                  userId:
+                    (userData as any).userId || (userData as any).partnerId,
+                  email: userData.email,
+                  userType: userType,
+                },
+                {
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                }
+              );
+
+              if (sessionResponse.data.success && sessionResponse.data.token) {
+                token.jwtToken = sessionResponse.data.token;
+              }
             }
           } catch (error) {
             console.error("Error generating JWT token:", error);
@@ -139,41 +202,57 @@ export default NextAuth({
           );
 
           if (verifyResponse.data.valid) {
-            // Update dengan data terbaru dari database
-            token.backendUser = {
-              ...verifyResponse.data.user,
-              bookings: verifyResponse.data.user.bookings || [],
-              reviews: verifyResponse.data.user.reviews || [],
-            };
+            if (token.userType === "partner" && verifyResponse.data.partner) {
+              token.backendPartner = {
+                ...verifyResponse.data.partner,
+              };
+            } else if (verifyResponse.data.user) {
+              token.backendUser = {
+                ...verifyResponse.data.user,
+                bookings: verifyResponse.data.user.bookings || [],
+                reviews: verifyResponse.data.user.reviews || [],
+              };
+            }
           } else {
             // Token expired, try to refresh
-            if (token.backendUser) {
+            if (token.backendUser || token.backendPartner) {
               try {
-                const refreshResponse = await axios.post(
-                  `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/create-session`,
-                  {
-                    userId: token.backendUser.userId,
-                    email: token.backendUser.email,
-                  }
-                );
+                const userData = token.backendUser || token.backendPartner;
+                if (userData) {
+                  const refreshResponse = await axios.post(
+                    `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/create-session`,
+                    {
+                      userId:
+                        (userData as any).userId || (userData as any).partnerId,
+                      email: userData.email,
+                      userType: token.userType,
+                    }
+                  );
 
-                if (
-                  refreshResponse.data.success &&
-                  refreshResponse.data.token
-                ) {
-                  token.jwtToken = refreshResponse.data.token;
-                  // Update dengan data terbaru dari database
-                  if (refreshResponse.data.user) {
-                    token.backendUser = {
-                      ...token.backendUser,
-                      ...refreshResponse.data.user,
-                    };
+                  if (
+                    refreshResponse.data.success &&
+                    refreshResponse.data.token
+                  ) {
+                    token.jwtToken = refreshResponse.data.token;
+                    // Update dengan data terbaru dari database
+                    if (refreshResponse.data.user) {
+                      token.backendUser = {
+                        ...token.backendUser,
+                        ...refreshResponse.data.user,
+                      };
+                    } else if (refreshResponse.data.partner) {
+                      token.backendPartner = {
+                        ...token.backendPartner,
+                        ...refreshResponse.data.partner,
+                      };
+                    }
                   }
                 }
               } catch (refreshError) {
                 console.error("Error refreshing JWT token:", refreshError);
                 delete token.jwtToken;
                 delete token.backendUser;
+                delete token.backendPartner;
               }
             }
           }
@@ -181,6 +260,7 @@ export default NextAuth({
           console.error("Error verifying JWT token:", error);
           delete token.jwtToken;
           delete token.backendUser;
+          delete token.backendPartner;
         }
       }
 
@@ -188,7 +268,17 @@ export default NextAuth({
     },
 
     async session({ session, token }) {
-      if (token.backendUser && session.user) {
+      if (token.backendPartner && session.user) {
+        session.user.id = token.backendPartner.partnerId;
+        session.user.username = token.backendPartner.username;
+        session.user.profilePic = token.backendPartner.profilePic;
+        session.user.phone = token.backendPartner.phone;
+        session.user.backendPartner = {
+          ...token.backendPartner,
+        };
+        session.user.userType = "partner";
+        session.user.jwtToken = token.jwtToken;
+      } else if (token.backendUser && session.user) {
         session.user.id = token.backendUser.userId;
         session.user.username = token.backendUser.username;
         session.user.profilePic = token.backendUser.profilePic;
@@ -198,6 +288,7 @@ export default NextAuth({
         };
         session.user.bookings = token.backendUser.bookings || [];
         session.user.reviews = token.backendUser.reviews || [];
+        session.user.userType = "user";
         session.user.jwtToken = token.jwtToken;
       }
       return session;

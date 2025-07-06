@@ -49,6 +49,18 @@ const defaultCenter = {
 
 const ITEMS_PER_PAGE = 30;
 
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(false);
+  useEffect(() => {
+    const check = () =>
+      setIsDesktop(window.matchMedia("(min-width: 768px)").matches);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+  return isDesktop;
+}
+
 export default function HotelMap({ full }: MapProps) {
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [visibleHotels, setVisibleHotels] = useState<Hotel[]>([]);
@@ -60,6 +72,7 @@ export default function HotelMap({ full }: MapProps) {
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hotelRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+  const isDesktop = useIsDesktop();
 
   // Set default hotels immediately when component mounts
   useEffect(() => {
@@ -314,7 +327,7 @@ export default function HotelMap({ full }: MapProps) {
                 position={{ lat: selectedHotel.lat, lng: selectedHotel.lng }}
                 onCloseClick={() => setSelectedHotel(null)}
                 options={{
-                  maxWidth: 320,
+                  maxWidth: 200,
                   pixelOffset:
                     window.google &&
                     window.google.maps &&
@@ -366,9 +379,9 @@ export default function HotelMap({ full }: MapProps) {
           </GoogleMap>
         </LoadScript>
         {/* Search in this area button & Hotel List Section hanya saat full */}
-        {full && (
+        {(full || isDesktop) && (
           <>
-            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10">
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10 w-auto px-4 md:w-auto md:px-0 flex justify-center">
               <button
                 onClick={handleSearchInArea}
                 className="bg-blue-600 text-white px-4 py-2 rounded-full shadow-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
@@ -384,9 +397,9 @@ export default function HotelMap({ full }: MapProps) {
                 )}
               </button>
             </div>
-            <div className="absolute top-0 right-0 w-96 h-full bg-white shadow-lg overflow-y-auto z-20">
+            <div className="fixed bottom-0 left-0 w-full z-30 bg-white shadow-2xl p-2 md:static md:w-96 md:h-full md:shadow-lg md:p-0">
               {/* Search Header */}
-              <div className="p-4 border-b">
+              <div className="p-4 border-b hidden md:block">
                 <input
                   type="text"
                   placeholder="Cari ..."
@@ -406,7 +419,6 @@ export default function HotelMap({ full }: MapProps) {
                   )}
                 </div>
               </div>
-
               {/* Hotel List */}
               <div className="p-4">
                 {getCurrentPageHotels().length === 0 ? (
@@ -414,18 +426,14 @@ export default function HotelMap({ full }: MapProps) {
                     Tidak ada hotel ditemukan di area ini
                   </div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="flex gap-4 overflow-x-auto flex-nowrap md:grid md:grid-cols-2 lg:grid-cols-3 md:overflow-x-visible md:flex-none">
                     {getCurrentPageHotels().map((hotel) => (
                       <div
                         key={hotel.id}
                         ref={(el) => {
                           hotelRefs.current[hotel.id] = el;
                         }}
-                        className={`border rounded-lg p-3 hover:shadow-md transition-shadow cursor-pointer ${
-                          selectedHotel?.id === hotel.id
-                            ? "ring-2 ring-blue-500"
-                            : ""
-                        }`}
+                        className="min-w-[260px] max-w-xs flex-shrink-0 md:min-w-0 md:max-w-full border rounded-lg p-3 hover:shadow-md transition-shadow cursor-pointer md:col-span-1"
                         onClick={() => setSelectedHotel(hotel)}
                       >
                         <div className="flex gap-3">
@@ -469,10 +477,9 @@ export default function HotelMap({ full }: MapProps) {
                     ))}
                   </div>
                 )}
-
-                {/* Pagination */}
+                {/* Pagination tetap di bawah, tidak horizontal */}
                 {totalPages > 1 && (
-                  <div className="flex justify-center items-center gap-2 mt-6">
+                  <div className="hidden md:flex justify-center items-center gap-2 mt-6">
                     <button
                       onClick={() =>
                         setCurrentPage(Math.max(1, currentPage - 1))

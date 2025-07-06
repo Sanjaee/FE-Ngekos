@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
+import { useRouter } from "next/router";
 import {
   User,
   Settings,
@@ -9,6 +10,7 @@ import {
   Heart,
   Bell,
   Loader2,
+  Building2,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -21,14 +23,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import {
-  NavigationMenu,
-  NavigationMenuContent,
-  NavigationMenuItem,
-  NavigationMenuLink,
-  NavigationMenuList,
-  NavigationMenuTrigger,
-} from "@/components/ui/navigation-menu";
-import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -37,6 +31,7 @@ import {
 
 export default function Navbar() {
   const { data: session, status } = useSession();
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleLogin = async () => {
@@ -158,6 +153,12 @@ export default function Navbar() {
                       </div>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
+                    {session.user?.userType === 'partner' && (
+                      <DropdownMenuItem onClick={() => router.push('/partner/dashboard')}>
+                        <Building2 className="mr-2 h-4 w-4" />
+                        <span>Partner Dashboard</span>
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem>
                       <User className="mr-2 h-4 w-4" />
                       <span>Profil</span>
@@ -193,7 +194,14 @@ export default function Navbar() {
                       "Login"
                     )}
                   </Button>
-                  <Button size="sm">Daftar</Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => router.push("/partner/login")}
+                  >
+                    <Building2 className="mr-2 h-4 w-4" />
+                    Partner
+                  </Button>
                 </div>
               )}
             </div>
