@@ -4,7 +4,7 @@ import CardLayout from "../components/Layout/CardLayout";
 import { useState, useEffect } from "react";
 import HotelMap from "../components/Layout/Map";
 import { useRouter } from "next/router";
-import { dummyHotels } from "@/data/dummyHotels";
+import { dummyHotels, DUMMY_IMAGE } from "@/data/dummyHotels";
 import Link from "next/link";
 import SkeletonCardLayout from "@/components/Layout/SkeletonCardLayout";
 
@@ -112,7 +112,7 @@ export default function Main() {
             >
               <a style={{ display: "block", height: "100%" }}>
                 <CardLayout
-                  image={hotel.mainImage}
+                  image={hotel.mainImage || DUMMY_IMAGE}
                   name={hotel.name}
                   address={hotel.address}
                   rating={hotel.rating}
