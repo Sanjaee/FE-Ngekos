@@ -93,7 +93,9 @@ export default function ViewKosan() {
     <div className="min-h-screen bg-gray-50 py-8 px-4">
       <div className="max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl text-gray-800 font-bold">Daftar Kosan Saya</h1>
+          <h1 className="text-2xl text-gray-800 font-bold">
+            Daftar Kosan Saya
+          </h1>
           <Button
             variant="outline"
             onClick={() => router.push("/partner/dashboard")}
@@ -104,7 +106,12 @@ export default function ViewKosan() {
         {isLoading ? (
           <div className="text-gray-500">Memuat data kosan...</div>
         ) : error ? (
-          <div className="text-red-500">{error}</div>
+          <div
+            className="text-red-500 break-words break-all"
+            style={{ textWrap: "wrap" }}
+          >
+            {error}
+          </div>
         ) : rentals.length === 0 ? (
           <div className="text-gray-500">Belum ada kosan yang terdaftar.</div>
         ) : (

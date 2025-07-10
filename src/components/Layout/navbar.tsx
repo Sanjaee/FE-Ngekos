@@ -28,6 +28,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import Link from "next/link";
 
 export default function Navbar() {
   const { data: session, status } = useSession();
@@ -71,7 +72,7 @@ export default function Navbar() {
                       <span className="text-white font-bold text-lg">N</span>
                     </div>
                     <span className="text-xl font-bold text-gray-900">
-                      Ngekos
+                      Livana
                     </span>
                   </div>
                 </div>
@@ -97,12 +98,9 @@ export default function Navbar() {
             <div className="flex items-center">
               <div className="flex-shrink-0">
                 <div className="flex items-center space-x-2">
-                  <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                    <span className="text-white font-bold text-lg">N</span>
-                  </div>
-                  <span className="text-xl font-bold text-gray-900">
-                    Ngekos
-                  </span>
+                  <Link href="/" className="text-xl font-bold text-gray-900">
+                    Livana
+                  </Link>
                 </div>
               </div>
             </div>

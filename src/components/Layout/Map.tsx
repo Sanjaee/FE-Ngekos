@@ -8,23 +8,11 @@ import {
 import Head from "next/head";
 import Image from "next/image";
 import { dummyHotels, DUMMY_IMAGE } from "../../data/dummyHotels";
+import Link from "next/link";
+import { useRouter } from "next/router";
 
 // Types
-interface Hotel {
-  id: string;
-  name: string;
-  rating: number;
-  reviews: number;
-  price: number;
-  originalPrice?: number;
-  distance: string;
-  image: string;
-  lat: number;
-  lng: number;
-  address: string;
-  include: string[];
-  images?: string[];
-}
+import type { Rental } from "@/data/dummyHotels";
 
 interface MapBounds {
   north: number;
@@ -63,8 +51,8 @@ function useIsDesktop() {
 
 export default function HotelMap({ full }: MapProps) {
   const [map, setMap] = useState<google.maps.Map | null>(null);
-  const [visibleHotels, setVisibleHotels] = useState<Hotel[]>([]);
-  const [selectedHotel, setSelectedHotel] = useState<Hotel | null>(null);
+  const [visibleHotels, setVisibleHotels] = useState<Rental[]>([]);
+  const [selectedHotel, setSelectedHotel] = useState<Rental | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -73,6 +61,7 @@ export default function HotelMap({ full }: MapProps) {
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hotelRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   const isDesktop = useIsDesktop();
+  const router = useRouter();
 
   // Set default hotels immediately when component mounts
   useEffect(() => {
@@ -113,17 +102,17 @@ export default function HotelMap({ full }: MapProps) {
     (bounds: MapBounds | null, query: string = "") => {
       if (!bounds) return [];
 
-      let filtered = dummyHotels.filter((hotel) => {
+      let filtered = dummyHotels.filter((rental) => {
         const inBounds =
-          hotel.lat >= bounds.south &&
-          hotel.lat <= bounds.north &&
-          hotel.lng >= bounds.west &&
-          hotel.lng <= bounds.east;
+          rental.lat >= bounds.south &&
+          rental.lat <= bounds.north &&
+          rental.lng >= bounds.west &&
+          rental.lng <= bounds.east;
 
         const matchesSearch =
           query === "" ||
-          hotel.name.toLowerCase().includes(query.toLowerCase()) ||
-          hotel.address.toLowerCase().includes(query.toLowerCase());
+          rental.name.toLowerCase().includes(query.toLowerCase()) ||
+          rental.address.toLowerCase().includes(query.toLowerCase());
 
         return inBounds && matchesSearch;
       });
@@ -253,8 +242,8 @@ export default function HotelMap({ full }: MapProps) {
   }, [filterHotels]);
 
   useEffect(() => {
-    if (selectedHotel && hotelRefs.current[selectedHotel.id]) {
-      hotelRefs.current[selectedHotel.id]?.scrollIntoView({
+    if (selectedHotel && hotelRefs.current[selectedHotel.rentalId]) {
+      hotelRefs.current[selectedHotel.rentalId]?.scrollIntoView({
         behavior: "smooth",
         block: "center",
       });
@@ -296,11 +285,11 @@ export default function HotelMap({ full }: MapProps) {
               fullscreenControl: false,
             }}
           >
-            {getCurrentPageHotels().map((hotel) => (
+            {getCurrentPageHotels().map((rental) => (
               <Marker
-                key={hotel.id}
-                position={{ lat: hotel.lat, lng: hotel.lng }}
-                onClick={() => setSelectedHotel(hotel)}
+                key={rental.rentalId}
+                position={{ lat: rental.lat, lng: rental.lng }}
+                onClick={() => setSelectedHotel(rental)}
                 icon={{
                   url:
                     "data:image/svg+xml;base64," +
@@ -308,7 +297,7 @@ export default function HotelMap({ full }: MapProps) {
                     <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
                       <circle cx="20" cy="20" r="18" fill="#FF6B6B" stroke="white" stroke-width="2"/>
                       <text x="20" y="25" text-anchor="middle" fill="white" font-size="12" font-weight="bold">
-                        ${hotel.price.toString().slice(0, 3)}K
+                        ${rental.price.toString().slice(0, 3)}K
                       </text>
                     </svg>
                   `),
@@ -337,12 +326,15 @@ export default function HotelMap({ full }: MapProps) {
                 }}
               >
                 <div
-                  className="p-0 max-w-sm"
+                  className="p-0 max-w-sm cursor-pointer"
                   style={{ borderRadius: 5, overflow: "hidden" }}
+                  onClick={() =>
+                    router.push(`/detail/${selectedHotel.rentalId}`)
+                  }
                 >
                   <div className="relative">
                     <img
-                      src={selectedHotel.image || DUMMY_IMAGE}
+                      src={selectedHotel.mainImage || DUMMY_IMAGE}
                       alt={selectedHotel.name}
                       className="w-full h-40 object-cover rounded-none"
                       style={{ display: "block" }}
@@ -356,14 +348,17 @@ export default function HotelMap({ full }: MapProps) {
                     <div className="flex items-center mb-1">
                       <span className="text-orange-400 text-lg mr-1">★★★</span>
                     </div>
-                    <p className="text-xs text-gray-600 mb-1">
-                      {selectedHotel.distance || "542 m dari area pilihanmu"}
+                    <p
+                      className="text-xs text-gray-600 mb-1 break-words break-all"
+                      style={{ textWrap: "wrap" }}
+                    >
+                      542 m dari area pilihanmu
                     </p>
                     <div className="text-xs text-gray-800 mb-2">
                       <span className="font-bold">{selectedHotel.rating}</span>
                       <span className="text-gray-500">
                         {" "}
-                        ({selectedHotel.reviews})
+                        ({selectedHotel.reviewCount})
                       </span>
                     </div>
                     <div className="font-bold text-lg text-red-600 mb-1">
@@ -427,53 +422,61 @@ export default function HotelMap({ full }: MapProps) {
                   </div>
                 ) : (
                   <div className="flex gap-4 overflow-x-auto flex-nowrap md:grid md:grid-cols-2 lg:grid-cols-3 md:overflow-x-visible md:flex-none">
-                    {getCurrentPageHotels().map((hotel) => (
-                      <div
-                        key={hotel.id}
-                        ref={(el) => {
-                          hotelRefs.current[hotel.id] = el;
-                        }}
-                        className="min-w-[260px] max-w-xs flex-shrink-0 md:min-w-0 md:max-w-full border rounded-lg p-3 hover:shadow-md transition-shadow cursor-pointer md:col-span-1"
-                        onClick={() => setSelectedHotel(hotel)}
+                    {getCurrentPageHotels().map((rental) => (
+                      <Link
+                        key={rental.rentalId}
+                        href={`/detail/${rental.rentalId}`}
+                        passHref
+                        legacyBehavior
                       >
-                        <div className="flex gap-3">
-                          <div className="w-20 h-20 bg-gray-200 rounded-lg flex-shrink-0 flex items-center justify-center overflow-hidden">
-                            <img
-                              src={hotel.image}
-                              alt={hotel.name}
-                              className="object-cover w-full h-full rounded-lg"
-                              onError={(e) => {
-                                e.currentTarget.src =
-                                  "https://dummyimage.com/300x200/cccccc/ffffff.jpg&text=No+Image";
-                              }}
-                            />
-                          </div>
-                          <div className="flex-1">
-                            <h3 className="font-semibold text-sm text-gray-900">
-                              {hotel.name}
-                            </h3>
-                            <div className="flex items-center gap-1 mt-1">
-                              <span className="text-yellow-500 text-xs">★</span>
-                              <span className="text-xs">
-                                {hotel.rating}/5 ({hotel.reviews})
-                              </span>
+                        <a
+                          className="min-w-[260px] max-w-xs flex-shrink-0 md:min-w-0 md:max-w-full border rounded-lg p-3 hover:shadow-md transition-shadow cursor-pointer md:col-span-1"
+                          style={{ display: "block", height: "100%" }}
+                        >
+                          <div className="flex gap-3">
+                            <div className="w-20 h-20 bg-gray-200 rounded-lg flex-shrink-0 flex items-center justify-center overflow-hidden">
+                              <img
+                                src={rental.mainImage || DUMMY_IMAGE}
+                                alt={rental.name}
+                                className="object-cover w-full h-full rounded-lg"
+                                onError={(e) => {
+                                  e.currentTarget.src =
+                                    "https://dummyimage.com/300x200/cccccc/ffffff.jpg&text=No+Image";
+                                }}
+                              />
                             </div>
-                            <p className="text-xs text-gray-600 mt-1">
-                              {hotel.distance}
-                            </p>
-                            <div className="flex items-center gap-2 mt-2">
-                              {hotel.originalPrice && (
-                                <span className="text-xs line-through text-gray-500">
-                                  {formatPrice(hotel.originalPrice)}
+                            <div className="flex-1">
+                              <h3 className="font-semibold text-sm text-gray-900">
+                                {rental.name}
+                              </h3>
+                              <div className="flex items-center gap-1 mt-1">
+                                <span className="text-yellow-500 text-xs">
+                                  ★
                                 </span>
-                              )}
-                              <span className="font-bold text-red-600 text-sm">
-                                {formatPrice(hotel.price)}
-                              </span>
+                                <span className="text-xs">
+                                  {rental.rating}/5 ({rental.reviewCount})
+                                </span>
+                              </div>
+                              <p
+                                className="text-xs text-gray-600 mt-1 break-words break-all"
+                                style={{ textWrap: "wrap" }}
+                              >
+                                542 m dari area pilihanmu
+                              </p>
+                              <div className="flex items-center gap-2 mt-2">
+                                {rental.originalPrice && (
+                                  <span className="text-xs line-through text-gray-500">
+                                    {formatPrice(rental.originalPrice)}
+                                  </span>
+                                )}
+                                <span className="font-bold text-red-600 text-sm">
+                                  {formatPrice(rental.price)}
+                                </span>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </div>
+                        </a>
+                      </Link>
                     ))}
                   </div>
                 )}

@@ -29,7 +29,10 @@ export const CardLayout: React.FC<CardLayoutProps> = ({
   onDetailClick,
 }) => {
   return (
-    <Card className="bg-white hover:shadow-lg transition-shadow cursor-pointer h-full flex flex-col group">
+    <Card
+      className="bg-white hover:shadow-lg transition-shadow cursor-pointer h-full flex flex-col group"
+      onClick={onDetailClick}
+    >
       <CardContent className="p-0 flex flex-col h-full">
         {/* Image Section */}
         <div className="relative mb-3">
@@ -110,7 +113,7 @@ export const CardLayout: React.FC<CardLayoutProps> = ({
                 IDR {originalPrice.toLocaleString("id-ID")}
               </span>
             )}
-            <p className="text-xs text-gray-500">/kamar/malam</p>
+            <p className="text-xs text-gray-500">/kamar</p>
           </div>
         </div>
       </CardContent>
