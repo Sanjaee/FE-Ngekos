@@ -15,7 +15,7 @@ import axios from "axios";
 import { Plus } from "lucide-react";
 
 export default function PartnerDashboard() {
-  const { data: session, status } = useSession();
+  const { data: session, status, update: updateSession } = useSession();
   const router = useRouter();
 
   useEffect(() => {
@@ -31,12 +31,81 @@ export default function PartnerDashboard() {
       return;
     }
 
-    // If partner hasn't completed registration, redirect to registration
-    if (!session.user?.backendPartner?.phone) {
-      router.push("/partner/register");
+    console.log("Dashboard - Session data:", {
+      userType: session.user?.userType,
+      phone: session.user?.backendPartner?.phone,
+      username: session.user?.backendPartner?.username,
+      backendPartner: session.user?.backendPartner,
+    });
+
+    // If partner hasn't completed registration, try to refresh session first
+    if (!session.user?.backendPartner?.isVerified) {
+      console.log("Registration incomplete, trying to refresh session...");
+
+      // Try to refresh session data
+      const refreshSession = async () => {
+        try {
+          console.log("Attempting to refresh session with:", {
+            userId: session?.user?.backendPartner?.partnerId,
+            email: session?.user?.email,
+            userType: "partner",
+          });
+
+          const sessionResponse = await axios.post(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/create-session`,
+            {
+              userId: session?.user?.backendPartner?.partnerId,
+              email: session?.user?.email,
+              userType: "partner",
+            },
+            {
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${session?.user?.jwtToken}`,
+              },
+            }
+          );
+
+          console.log("Session refresh response:", sessionResponse.data);
+
+          if (
+            sessionResponse.data.success &&
+            sessionResponse.data.partner?.isVerified === true
+          ) {
+            console.log("Session refreshed, registration is complete");
+            // Update session and stay on dashboard
+            await updateSession({
+              ...session,
+              user: {
+                ...session?.user,
+                backendPartner: sessionResponse.data.partner,
+              },
+            });
+            return; // Stay on dashboard
+          } else {
+            console.log(
+              "Session refreshed but registration still incomplete:",
+              sessionResponse.data.partner
+            );
+          }
+        } catch (error: any) {
+          console.error("Error refreshing session:", error);
+          if (error.response) {
+            console.error("Error response:", error.response.data);
+          }
+        }
+
+        // If refresh failed or still incomplete, redirect to register
+        console.log("Registration still incomplete, redirecting to register");
+        router.push("/partner/register");
+      };
+
+      refreshSession();
       return;
     }
-  }, [session, status, router]);
+
+    console.log("Registration complete, staying on dashboard");
+  }, [session, status, router, updateSession]);
 
   if (status === "loading") {
     return (
@@ -49,10 +118,6 @@ export default function PartnerDashboard() {
     );
   }
 
-  const handlePayment = () => {
-    router.push("/partner/payment");
-  };
-
   if (!session || session.user?.userType !== "partner") {
     return null; // Will redirect in useEffect
   }
@@ -61,8 +126,6 @@ export default function PartnerDashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-
-
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -152,16 +215,16 @@ export default function PartnerDashboard() {
             {/* Subscription Info */}
             <Card className="py-6">
               <CardHeader>
-                <CardTitle>Subscription Information</CardTitle>
+                <CardTitle>Account Information</CardTitle>
                 <CardDescription>
-                  Your current subscription details and limits
+                  Your current account details and limits
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className="text-center">
                     <div className="text-2xl font-bold text-blue-600">
-                      {partner?.maxRooms || 0}
+                      {partner?.maxRooms || 10}
                     </div>
                     <div className="text-sm text-gray-500">Max Rooms</div>
                   </div>
@@ -192,12 +255,7 @@ export default function PartnerDashboard() {
                   <Button
                     variant="plain"
                     className="h-20 flex flex-col items-center justify-center text-base"
-                    disabled={partner?.maxRooms === 0}
-                    onClick={() => {
-                      if (partner?.maxRooms > 0) {
-                        router.push("/partner/addKosan");
-                      }
-                    }}
+                    onClick={() => router.push("/partner/addKosan")}
                   >
                     <Plus className="w-6 h-6 mb-2" />
                     Add New Rental
@@ -269,28 +327,6 @@ export default function PartnerDashboard() {
                 </div>
               </CardContent>
             </Card>
-
-            {/* Payment Reminder */}
-            {partner?.maxRooms === 0 && (
-              <Card className="border-yellow-200 bg-yellow-50 py-6">
-                <CardHeader>
-                  <CardTitle className="text-yellow-800">
-                    Complete Your Setup
-                  </CardTitle>
-                  <CardDescription className="text-yellow-700">
-                    You need to make a payment to start adding rental properties
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <Button
-                    className="bg-yellow-600 hover:bg-yellow-700"
-                    onClick={handlePayment}
-                  >
-                    Make Payment (Rp 50,000)
-                  </Button>
-                </CardContent>
-              </Card>
-            )}
           </div>
         </div>
       </div>

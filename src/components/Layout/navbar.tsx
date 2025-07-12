@@ -72,7 +72,7 @@ export default function Navbar() {
                       <span className="text-white font-bold text-lg">N</span>
                     </div>
                     <span className="text-xl font-bold text-gray-900">
-                      Livana
+                      Livina
                     </span>
                   </div>
                 </div>

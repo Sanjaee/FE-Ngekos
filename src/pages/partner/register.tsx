@@ -16,7 +16,7 @@ import axios from "axios";
 import LoadingScreen from "@/components/ui/LoadingScreen";
 
 export default function PartnerRegister() {
-  const { data: session, status } = useSession();
+  const { data: session, status, update } = useSession();
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
@@ -35,20 +35,70 @@ export default function PartnerRegister() {
       return;
     }
 
-    // If user is already a partner and has completed registration, redirect to dashboard
-    if (
-      session.user?.userType === "partner" &&
-      session.user?.backendPartner?.phone
-    ) {
-      router.push("/partner/dashboard");
-      return;
-    }
+    console.log("Register page - Session data:", {
+      userType: session.user?.userType,
+      isVerified: session.user?.backendPartner?.isVerified,
+      phone: session.user?.backendPartner?.phone,
+      username: session.user?.backendPartner?.username,
+      backendPartner: session.user?.backendPartner,
+    });
 
     // If user is not a partner, redirect to partner login
     if (session.user?.userType !== "partner") {
       router.push("/partner/login");
       return;
     }
+
+    // Always try to refresh session to get latest verification status
+    const refreshSessionData = async () => {
+      try {
+        console.log("Refreshing session to get latest verification status...");
+        const sessionResponse = await axios.post(
+          `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/create-session`,
+          {
+            userId: session?.user?.backendPartner?.partnerId,
+            email: session?.user?.email,
+            userType: "partner",
+          },
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session?.user?.jwtToken}`,
+            },
+          }
+        );
+
+        console.log(
+          "Register page - Session refresh response:",
+          sessionResponse.data
+        );
+
+        if (sessionResponse.data.success) {
+          // Update session with fresh data
+          await update({
+            ...session,
+            user: {
+              ...session?.user,
+              backendPartner: sessionResponse.data.partner,
+            },
+          });
+
+          // Check if partner is verified after refresh
+          if (sessionResponse.data.partner?.isVerified === true) {
+            console.log(
+              "Partner is verified after session refresh, redirecting to dashboard"
+            );
+            router.push("/partner/dashboard");
+            return;
+          }
+        }
+      } catch (error: any) {
+        console.error("Error refreshing session in register page:", error);
+      }
+    };
+
+    // Refresh session data
+    refreshSessionData();
 
     // Pre-fill form with existing data
     if (session.user?.backendPartner) {
@@ -58,7 +108,7 @@ export default function PartnerRegister() {
         businessName: session.user.backendPartner.businessName || "",
       });
     }
-  }, [session, status, router]);
+  }, [session, status, router, update]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -74,14 +124,18 @@ export default function PartnerRegister() {
     setError("");
 
     try {
+      const requestData = {
+        partnerId: session?.user?.backendPartner?.partnerId,
+        username: formData.username,
+        phone: formData.phone,
+        businessName: formData.businessName,
+      };
+
+      console.log("Sending registration data:", requestData);
+
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/register-partner`,
-        {
-          partnerId: session?.user?.id,
-          username: formData.username,
-          phone: formData.phone,
-          businessName: formData.businessName,
-        },
+        requestData,
         {
           headers: {
             "Content-Type": "application/json",
@@ -91,9 +145,12 @@ export default function PartnerRegister() {
       );
 
       if (response.data.success) {
-        // Redirect to dashboard after successful registration
+        console.log("Registration successful:", response.data);
+
+        // Redirect to dashboard - let dashboard handle session refresh
         router.push("/partner/dashboard");
       } else {
+        console.log("Registration failed:", response.data);
         setError(response.data.error || "Registration failed");
       }
     } catch (error: any) {

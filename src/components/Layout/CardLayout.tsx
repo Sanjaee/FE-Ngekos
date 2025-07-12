@@ -30,7 +30,7 @@ export const CardLayout: React.FC<CardLayoutProps> = ({
 }) => {
   return (
     <Card
-      className="bg-white hover:shadow-lg transition-shadow cursor-pointer h-full flex flex-col group"
+      className="bg-white hover:shadow-lg transition-shadow cursor-pointer h-full flex flex-col group py-0"
       onClick={onDetailClick}
     >
       <CardContent className="p-0 flex flex-col h-full">

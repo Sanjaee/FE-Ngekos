@@ -93,9 +93,6 @@ export default function PartnerLogin() {
               <Badge variant="outline" className="text-sm">
                 📊 Analytics Dashboard
               </Badge>
-              <Badge variant="outline" className="text-sm">
-                💰 Payment Tracking
-              </Badge>
             </div>
           </CardHeader>
           <CardContent className="space-y-6">

@@ -66,12 +66,6 @@ export default function AddKosan() {
       return;
     }
 
-    // If partner hasn't paid, redirect to payment
-    if (session.user?.backendPartner?.maxRooms === 0) {
-      router.push("/partner/payment");
-      return;
-    }
-
     // Fetch rentals for this partner
     const partnerId = session.user?.backendPartner?.partnerId;
     if (!partnerId) return;
@@ -208,7 +202,6 @@ export default function AddKosan() {
   }
 
   const partner = session.user.backendPartner;
-  const availableRooms = (partner?.maxRooms || 0) - rentals.length;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -469,23 +462,9 @@ export default function AddKosan() {
                     </div>
                   </div>
 
-                  <Button
-                    type="submit"
-                    disabled={isLoading || availableRooms <= 0}
-                    className="w-full"
-                  >
-                    {availableRooms <= 0
-                      ? "Kuota Kamar Habis"
-                      : isLoading
-                      ? "Adding Property..."
-                      : "Add Property"}
+                  <Button type="submit" disabled={isLoading} className="w-full">
+                    {isLoading ? "Adding Property..." : "Add Property"}
                   </Button>
-                  {availableRooms <= 0 && (
-                    <div className="text-red-600 text-sm mt-2">
-                      Kuota kamar Anda sudah habis. Silakan upgrade paket untuk
-                      menambah kamar.
-                    </div>
-                  )}
                 </form>
               </CardContent>
             </Card>
@@ -494,7 +473,7 @@ export default function AddKosan() {
           {/* Sidebar */}
           <div className="lg:col-span-1">
             <div className="sticky top-16">
-              <Card className="pt-6">
+              <Card className="pt-6 pb-0">
                 <CardHeader>
                   <CardTitle>Property Preview</CardTitle>
                   <CardDescription>
@@ -534,9 +513,9 @@ export default function AddKosan() {
                     </span>
                   </div>
                   <div className="text-sm">
-                    <span className="text-gray-500">Available Rooms:</span>
+                    <span className="text-gray-500">Total Properties:</span>
                     <span className="ml-2 font-medium text-blue-600">
-                      {availableRooms}
+                      {rentals.length}
                     </span>
                   </div>
                   <div className="text-sm">
