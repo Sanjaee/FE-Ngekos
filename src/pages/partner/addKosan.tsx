@@ -17,8 +17,17 @@ import CardLayout from "@/components/Layout/CardLayout";
 import { Trash2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import LoadingScreen from "@/components/ui/LoadingScreen";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 import axios from "axios";
+import { uploadToCloudinary } from "@/lib/cloudinary";
+import { z } from "zod";
 
 const facilities = [
   { id: "wifi", label: "WiFi" },
@@ -32,6 +41,24 @@ const facilities = [
   { id: "gym", label: "Gym" },
   { id: "garden", label: "Garden" },
 ];
+
+// Zod schema
+const imageFileSchema = z
+  .instanceof(File)
+  .refine((file) => file.size <= 3 * 1024 * 1024, "Ukuran gambar maksimal 3MB");
+
+const addKosanSchema = z.object({
+  name: z.string().min(1, "Nama kosan wajib diisi"),
+  address: z.string().min(1, "Alamat wajib diisi"),
+  lat: z.string().min(1, "Latitude wajib diisi"),
+  lng: z.string().min(1, "Longitude wajib diisi"),
+  price: z.string().min(1, "Harga wajib diisi"),
+  mainImageFile: imageFileSchema,
+  imagesFiles: z
+    .array(imageFileSchema)
+    .max(10, "Maksimal 10 gambar")
+    .or(z.tuple([])), // allow empty array
+});
 
 export default function AddKosan() {
   const { data: session, status } = useSession();
@@ -54,6 +81,15 @@ export default function AddKosan() {
   const [rentals, setRentals] = useState<any[]>([]);
   const [showCoordinateInput, setShowCoordinateInput] = useState(false);
   const [coordinateInput, setCoordinateInput] = useState("");
+  const [mainImageFile, setMainImageFile] = useState<File | null>(null);
+  const [mainImagePreview, setMainImagePreview] = useState<string>("");
+  // Inisialisasi imagesFiles dan imagesPreviews dengan satu elemen
+  const [imagesFiles, setImagesFiles] = useState<(File | null)[]>([null]);
+  const [imagesPreviews, setImagesPreviews] = useState<string[]>([""]);
+  const [uploading, setUploading] = useState(false);
+  const [openConfirmDialog, setOpenConfirmDialog] = useState(false);
+
+  const MAX_IMAGE_SIZE = 3 * 1024 * 1024; // 3MB
 
   // Function to parse coordinates from various formats
   const parseCoordinates = (
@@ -161,29 +197,138 @@ export default function AddKosan() {
     });
   };
 
+  // Perbaiki handleAddImage
   const handleAddImage = () => {
+    setImagesFiles((prev) => [...prev, null]);
+    setImagesPreviews((prev) => [...prev, ""]);
     setFormData((prev) => ({ ...prev, images: [...prev.images, ""] }));
   };
 
   const handleRemoveImage = (idx: number) => {
+    setImagesFiles((prev) => prev.filter((_, i) => i !== idx));
+    setImagesPreviews((prev) => prev.filter((_, i) => i !== idx));
     setFormData((prev) => {
-      const newImages = prev.images.filter((_, i) => i !== idx);
+      const newImages = [...prev.images];
+      newImages.splice(idx, 1);
       return { ...prev, images: newImages };
     });
+  };
+
+  // Handler for main image file select (no upload)
+  const handleMainImageFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > MAX_IMAGE_SIZE) {
+      toast({
+        title: "Ukuran gambar terlalu besar",
+        description: "Ukuran gambar maksimal 3MB.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setMainImageFile(file);
+    setMainImagePreview(URL.createObjectURL(file));
+    setFormData((prev) => ({ ...prev, mainImage: "" })); // clear url
+  };
+
+  // Handler for additional images file select (no upload)
+  const handleImageFile = (
+    idx: number,
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0] || null;
+    if (file && file.size > MAX_IMAGE_SIZE) {
+      toast({
+        title: "Ukuran gambar terlalu besar",
+        description: "Ukuran gambar maksimal 3MB.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setImagesFiles((prev) => {
+      const arr = [...prev];
+      arr[idx] = file;
+      return arr;
+    });
+    setImagesPreviews((prev) => {
+      const arr = [...prev];
+      arr[idx] = file ? URL.createObjectURL(file) : "";
+      return arr;
+    });
+    setFormData((prev) => {
+      const newImages = [...prev.images];
+      newImages[idx] = ""; // clear url
+      return { ...prev, images: newImages };
+    });
+  };
+
+  // Handler untuk hapus main image
+  const handleRemoveMainImage = () => {
+    setMainImageFile(null);
+    setMainImagePreview("");
+    setFormData((prev) => ({ ...prev, mainImage: "" }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
+    setUploading(true);
     setError("");
+
+    // Validasi dengan zod
+    const validation = addKosanSchema.safeParse({
+      ...formData,
+      mainImageFile,
+      imagesFiles: imagesFiles.filter((f): f is File => !!f),
+    });
+    if (!validation.success) {
+      const errors = validation.error.issues;
+      errors.forEach((err: { message: string }) => {
+        toast({
+          title: "Validasi gagal",
+          description: err.message,
+          variant: "destructive",
+        });
+      });
+      setIsLoading(false);
+      setUploading(false);
+      return;
+    }
 
     try {
       const partnerId = session?.user?.backendPartner?.partnerId;
       if (!partnerId) {
         setError("Partner ID not found in session");
         setIsLoading(false);
+        setUploading(false);
         return;
       }
+      // 1. Upload mainImage if file exists
+      let mainImageUrl = formData.mainImage;
+      if (mainImageFile) {
+        const reader = await new Promise<FileReader>((resolve) => {
+          const r = new FileReader();
+          r.onloadend = () => resolve(r);
+          r.readAsDataURL(mainImageFile);
+        });
+        mainImageUrl = await uploadToCloudinary(reader.result as string);
+      }
+      // 2. Upload images[] if file exists
+      const imagesUrls: string[] = [];
+      for (let i = 0; i < imagesFiles.length; i++) {
+        if (imagesFiles[i]) {
+          const reader = await new Promise<FileReader>((resolve) => {
+            const r = new FileReader();
+            r.onloadend = () => resolve(r);
+            r.readAsDataURL(imagesFiles[i] as File);
+          });
+          const url = await uploadToCloudinary(reader.result as string);
+          imagesUrls[i] = url;
+        } else {
+          imagesUrls[i] = formData.images[i] || "";
+        }
+      }
+      // 3. Submit to backend
       const payload = {
         partnerId,
         name: formData.name,
@@ -195,8 +340,8 @@ export default function AddKosan() {
         originalPrice: formData.originalPrice,
         roomCount: rentals.length + 1,
         facilities: formData.selectedFacilities,
-        images: formData.images,
-        mainImage: formData.mainImage,
+        images: imagesUrls,
+        mainImage: mainImageUrl,
       };
       const response = await axios.post(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/rental/create`,
@@ -234,6 +379,7 @@ export default function AddKosan() {
       setError(error.response?.data?.error || "Failed to add rental property");
     } finally {
       setIsLoading(false);
+      setUploading(false);
     }
   };
 
@@ -280,31 +426,60 @@ export default function AddKosan() {
 
                   {/* Main Image Input & Images Array Input */}
                   <div className="space-y-2 mb-6">
-                    <Label htmlFor="mainImage">Main Image URL</Label>
-                    <Input
-                      id="mainImage"
-                      name="mainImage"
-                      type="url"
-                      value={formData.mainImage}
-                      onChange={handleMainImageChange}
-                      placeholder="https://..."
-                      className="mt-1"
-                    />
-                    <Label className="mt-2">Images (URLs)</Label>
-                    {(formData.images.length === 0
-                      ? [""]
-                      : formData.images
-                    ).map((img, idx, arr) => (
+                    <Label htmlFor="mainImage">Main Image</Label>
+                    <div className="flex items-center gap-3">
+                      <Input
+                        id="mainImage"
+                        name="mainImage"
+                        type="file"
+                        accept="image/*"
+                        onChange={handleMainImageFile}
+                        disabled={isLoading || uploading}
+                      />
+                      {mainImagePreview && (
+                        <div className="relative inline-block">
+                          <img
+                            src={mainImagePreview}
+                            alt="Main Preview"
+                            className="w-20 h-20 object-cover rounded border"
+                          />
+                          <button
+                            type="button"
+                            className="absolute -top-2 -right-2 bg-white border border-gray-300 rounded-full p-1 shadow hover:bg-red-500 hover:text-white transition-colors"
+                            onClick={handleRemoveMainImage}
+                            aria-label="Remove main image"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    <Label className="mt-2">Images (Multiple)</Label>
+                    {imagesFiles.map((imgFile, idx) => (
                       <div key={idx} className="flex items-center gap-2 mt-1">
                         <Input
-                          type="url"
-                          value={img}
-                          onChange={(e) =>
-                            handleImageChange(idx, e.target.value)
-                          }
-                          placeholder={`Image URL #${idx + 1}`}
-                          className="flex-1"
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => handleImageFile(idx, e)}
+                          disabled={isLoading || uploading}
                         />
+                        {imagesPreviews[idx] && (
+                          <div className="relative inline-block">
+                            <img
+                              src={imagesPreviews[idx]}
+                              alt={`Preview ${idx + 1}`}
+                              className="w-16 h-16 object-cover rounded border"
+                            />
+                            <button
+                              type="button"
+                              className="absolute -top-2 -right-2 bg-white border border-gray-300 rounded-full p-1 shadow hover:bg-red-500 hover:text-white transition-colors"
+                              onClick={() => handleRemoveImage(idx)}
+                              aria-label="Remove image"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        )}
                         <Button
                           type="button"
                           variant="destructive"
@@ -321,6 +496,7 @@ export default function AddKosan() {
                       variant="default"
                       onClick={handleAddImage}
                       className="mt-2"
+                      disabled={isLoading || uploading}
                     >
                       Tambah Gambar
                     </Button>
@@ -595,8 +771,15 @@ export default function AddKosan() {
                     </div>
                   </div>
 
-                  <Button type="submit" disabled={isLoading} className="w-full">
-                    {isLoading ? "Adding Property..." : "Add Property"}
+                  <Button
+                    type="button"
+                    onClick={() => setOpenConfirmDialog(true)}
+                    disabled={isLoading || uploading}
+                    className="w-full"
+                  >
+                    {isLoading || uploading
+                      ? "Adding Property..."
+                      : "Add Property"}
                   </Button>
                 </form>
               </CardContent>
@@ -616,7 +799,7 @@ export default function AddKosan() {
                 <CardContent className="space-y-4 px-0">
                   <CardLayout
                     image={
-                      formData.mainImage || formData.images[0] || "/window.svg"
+                      mainImagePreview || imagesPreviews[0] || "/window.svg"
                     }
                     name={formData.name || "Nama Kosan"}
                     address={formData.address || "Alamat akan tampil di sini"}
@@ -631,6 +814,19 @@ export default function AddKosan() {
                     description={formData.description}
                     facilities={formData.selectedFacilities}
                   />
+                  {/* Preview images gallery */}
+                  {imagesPreviews.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {imagesPreviews.map((img, idx) => (
+                        <img
+                          key={idx}
+                          src={img}
+                          alt={`Preview ${idx + 1}`}
+                          className="w-16 h-16 object-cover rounded border"
+                        />
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
               {/* Partner Info */}
@@ -672,6 +868,36 @@ export default function AddKosan() {
           </div>
         </div>
       </div>
+
+      {/* Dialog Konfirmasi */}
+      <Dialog open={openConfirmDialog} onOpenChange={setOpenConfirmDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Konfirmasi Tambah Kosan</DialogTitle>
+          </DialogHeader>
+          <div className="py-2 text-sm">
+            Apakah Anda yakin ingin menambah kosan ini? Pastikan data sudah
+            benar.
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setOpenConfirmDialog(false)}
+            >
+              Batal
+            </Button>
+            <Button
+              onClick={async () => {
+                setOpenConfirmDialog(false);
+                await handleSubmit(new Event("submit") as any);
+              }}
+              disabled={isLoading || uploading}
+            >
+              Ya, Tambahkan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
