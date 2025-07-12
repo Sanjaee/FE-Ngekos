@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSession, signIn, signOut } from "next-auth/react";
 import { useRouter } from "next/router";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ export default function PartnerRegister() {
     phone: "",
     businessName: "",
   });
+  const hasRefreshedSession = useRef(false);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -49,56 +50,71 @@ export default function PartnerRegister() {
       return;
     }
 
-    // Always try to refresh session to get latest verification status
-    const refreshSessionData = async () => {
-      try {
-        console.log("Refreshing session to get latest verification status...");
-        const sessionResponse = await axios.post(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/create-session`,
-          {
-            userId: session?.user?.backendPartner?.partnerId,
-            email: session?.user?.email,
-            userType: "partner",
-          },
-          {
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${session?.user?.jwtToken}`,
+    // Check if partner is already verified
+    if (session.user?.backendPartner?.isVerified === true) {
+      console.log("Partner is already verified, redirecting to dashboard");
+      router.push("/partner/dashboard");
+      return;
+    }
+
+    // Only refresh session once to get latest verification status
+    if (!hasRefreshedSession.current) {
+      const refreshSessionData = async () => {
+        try {
+          console.log(
+            "Refreshing session to get latest verification status..."
+          );
+          hasRefreshedSession.current = true;
+
+          const sessionResponse = await axios.post(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/create-session`,
+            {
+              userId: session?.user?.backendPartner?.partnerId,
+              email: session?.user?.email,
+              userType: "partner",
             },
+            {
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${session?.user?.jwtToken}`,
+              },
+            }
+          );
+
+          console.log(
+            "Register page - Session refresh response:",
+            sessionResponse.data
+          );
+
+          if (sessionResponse.data.success) {
+            // Update session with fresh data
+            await update({
+              ...session,
+              user: {
+                ...session?.user,
+                backendPartner: sessionResponse.data.partner,
+              },
+            });
+
+            // Check if partner is verified after refresh
+            if (sessionResponse.data.partner?.isVerified === true) {
+              console.log(
+                "Partner is verified after session refresh, redirecting to dashboard"
+              );
+              router.push("/partner/dashboard");
+              return;
+            }
           }
-        );
-
-        console.log(
-          "Register page - Session refresh response:",
-          sessionResponse.data
-        );
-
-        if (sessionResponse.data.success) {
-          // Update session with fresh data
-          await update({
-            ...session,
-            user: {
-              ...session?.user,
-              backendPartner: sessionResponse.data.partner,
-            },
-          });
-
-          // Check if partner is verified after refresh
-          if (sessionResponse.data.partner?.isVerified === true) {
-            console.log(
-              "Partner is verified after session refresh, redirecting to dashboard"
-            );
-            router.push("/partner/dashboard");
-            return;
-          }
+        } catch (error: any) {
+          console.error("Error refreshing session in register page:", error);
+          // Reset the flag on error so we can try again
+          hasRefreshedSession.current = false;
         }
-      } catch (error: any) {
-        console.error("Error refreshing session in register page:", error);
-      }
-    };
+      };
 
-    // Refresh session data
-    refreshSessionData();
+      // Refresh session data
+      refreshSessionData();
+    }
 
     // Pre-fill form with existing data
     if (session.user?.backendPartner) {

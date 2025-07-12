@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Eye, Heart } from "lucide-react";
 import ImageLightbox from "./ImageLightbox";
-import type { Rental } from "@/data/dummyHotels";
+import type { Rental } from "@/lib/api";
 
 interface DetailPageProps {
   hotel: Rental;

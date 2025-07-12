@@ -52,6 +52,50 @@ export default function AddKosan() {
     images: [] as string[],
   });
   const [rentals, setRentals] = useState<any[]>([]);
+  const [showCoordinateInput, setShowCoordinateInput] = useState(false);
+  const [coordinateInput, setCoordinateInput] = useState("");
+
+  // Function to parse coordinates from various formats
+  const parseCoordinates = (
+    input: string
+  ): { lat: string; lng: string } | null => {
+    if (!input || typeof input !== "string") return null;
+
+    // Remove extra whitespace and normalize
+    const cleaned = input.trim().replace(/\s+/g, " ");
+
+    // Try different coordinate formats
+    const patterns = [
+      // Format: -6.230770 106.853030 (space separated)
+      /^(-?\d+\.?\d*)\s+(-?\d+\.?\d*)$/,
+      // Format: -6.230770,106.853030 (comma separated)
+      /^(-?\d+\.?\d*),(-?\d+\.?\d*)$/,
+      // Format: -6.230770, 106.853030 (comma with space)
+      /^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/,
+      // Format: lat:-6.230770 lng:106.853030
+      /lat:?\s*(-?\d+\.?\d*).*?lng:?\s*(-?\d+\.?\d*)/i,
+      // Format: latitude:-6.230770 longitude:106.853030
+      /latitude:?\s*(-?\d+\.?\d*).*?longitude:?\s*(-?\d+\.?\d*)/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = cleaned.match(pattern);
+      if (match) {
+        const lat = parseFloat(match[1]);
+        const lng = parseFloat(match[2]);
+
+        // Validate coordinate ranges
+        if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+          return {
+            lat: lat.toString(),
+            lng: lng.toString(),
+          };
+        }
+      }
+    }
+
+    return null;
+  };
 
   useEffect(() => {
     if (status === "loading") return;
@@ -357,39 +401,128 @@ export default function AddKosan() {
                         />
                       </div>
                     </div>
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        if (navigator.geolocation) {
-                          navigator.geolocation.getCurrentPosition(
-                            (position) => {
+                    <div className="space-y-2">
+                      <Button
+                        type="button"
+                        onClick={() => {
+                          if (navigator.geolocation) {
+                            navigator.geolocation.getCurrentPosition(
+                              (position) => {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  lat: position.coords.latitude.toString(),
+                                  lng: position.coords.longitude.toString(),
+                                }));
+                                toast({
+                                  title: "Lokasi berhasil diambil",
+                                  description: `Lat: ${position.coords.latitude.toFixed(
+                                    6
+                                  )}, Lng: ${position.coords.longitude.toFixed(
+                                    6
+                                  )}`,
+                                  variant: "default",
+                                });
+                              },
+                              (error) => {
+                                toast({
+                                  title: "Gagal mengambil lokasi",
+                                  description: error.message,
+                                  variant: "destructive",
+                                });
+                              }
+                            );
+                          } else {
+                            toast({
+                              title: "Geolocation tidak didukung",
+                              description:
+                                "Geolocation tidak didukung di browser ini.",
+                              variant: "destructive",
+                            });
+                          }
+                        }}
+                        className="mt-2 mr-2"
+                      >
+                        Ambil Lokasi Saya
+                      </Button>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() =>
+                          setShowCoordinateInput(!showCoordinateInput)
+                        }
+                        className="mt-2"
+                      >
+                        {showCoordinateInput ? "Batal" : "Paste Koordinat"}
+                      </Button>
+                    </div>
+
+                    {showCoordinateInput && (
+                      <div className="mt-2">
+                        <Input
+                          type="text"
+                          placeholder="-6.230770 106.853030"
+                          value={coordinateInput}
+                          onChange={(e) => setCoordinateInput(e.target.value)}
+                          onPaste={(e) => {
+                            e.preventDefault();
+                            const pastedText = e.clipboardData.getData("text");
+                            const coordinates = parseCoordinates(pastedText);
+                            if (coordinates) {
                               setFormData((prev) => ({
                                 ...prev,
-                                lat: position.coords.latitude.toString(),
-                                lng: position.coords.longitude.toString(),
+                                lat: coordinates.lat,
+                                lng: coordinates.lng,
                               }));
-                            },
-                            (error) => {
+                              setCoordinateInput("");
+                              setShowCoordinateInput(false);
                               toast({
-                                title: "Gagal mengambil lokasi",
-                                description: error.message,
+                                title: "Koordinat berhasil diparse",
+                                description: `Lat: ${coordinates.lat}, Lng: ${coordinates.lng}`,
+                                variant: "default",
+                              });
+                            } else {
+                              toast({
+                                title: "Format koordinat tidak valid",
+                                description: "Format: -6.230770 106.853030",
                                 variant: "destructive",
                               });
                             }
-                          );
-                        } else {
-                          toast({
-                            title: "Geolocation tidak didukung",
-                            description:
-                              "Geolocation tidak didukung di browser ini.",
-                            variant: "destructive",
-                          });
-                        }
-                      }}
-                      className="mt-2"
-                    >
-                      Ambil Lokasi Saya
-                    </Button>
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              const coordinates =
+                                parseCoordinates(coordinateInput);
+                              if (coordinates) {
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  lat: coordinates.lat,
+                                  lng: coordinates.lng,
+                                }));
+                                setCoordinateInput("");
+                                setShowCoordinateInput(false);
+                                toast({
+                                  title: "Koordinat berhasil diparse",
+                                  description: `Lat: ${coordinates.lat}, Lng: ${coordinates.lng}`,
+                                  variant: "default",
+                                });
+                              } else {
+                                toast({
+                                  title: "Format koordinat tidak valid",
+                                  description: "Format: -6.230770 106.853030",
+                                  variant: "destructive",
+                                });
+                              }
+                            }
+                          }}
+                        />
+                        <p className="text-xs text-gray-500 mt-1">
+                          Paste atau ketik koordinat seperti "-6.230770
+                          106.853030" dan tekan Enter
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   {/* Pricing */}

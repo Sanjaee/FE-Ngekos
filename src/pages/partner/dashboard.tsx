@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/router";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ import { Plus } from "lucide-react";
 export default function PartnerDashboard() {
   const { data: session, status, update: updateSession } = useSession();
   const router = useRouter();
+  const hasRefreshedSession = useRef(false);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -38,8 +39,17 @@ export default function PartnerDashboard() {
       backendPartner: session.user?.backendPartner,
     });
 
+    // If partner is already verified, no need to refresh
+    if (session.user?.backendPartner?.isVerified === true) {
+      console.log("Partner is already verified, staying on dashboard");
+      return;
+    }
+
     // If partner hasn't completed registration, try to refresh session first
-    if (!session.user?.backendPartner?.isVerified) {
+    if (
+      !session.user?.backendPartner?.isVerified &&
+      !hasRefreshedSession.current
+    ) {
       console.log("Registration incomplete, trying to refresh session...");
 
       // Try to refresh session data
@@ -50,6 +60,8 @@ export default function PartnerDashboard() {
             email: session?.user?.email,
             userType: "partner",
           });
+
+          hasRefreshedSession.current = true;
 
           const sessionResponse = await axios.post(
             `${process.env.NEXT_PUBLIC_BACKEND_URL}/auth/create-session`,
@@ -93,6 +105,8 @@ export default function PartnerDashboard() {
           if (error.response) {
             console.error("Error response:", error.response.data);
           }
+          // Reset the flag on error so we can try again
+          hasRefreshedSession.current = false;
         }
 
         // If refresh failed or still incomplete, redirect to register

@@ -7,13 +7,11 @@ import {
 } from "@react-google-maps/api";
 import Head from "next/head";
 import Image from "next/image";
-import { dummyHotels, DUMMY_IMAGE } from "../../data/dummyHotels";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import { apiService, Rental } from "@/lib/api";
 
 // Types
-import type { Rental } from "@/data/dummyHotels";
-
 interface MapBounds {
   north: number;
   south: number;
@@ -63,6 +61,38 @@ export default function HotelMap({ full }: MapProps) {
   const isDesktop = useIsDesktop();
   const router = useRouter();
 
+  // Open InfoWindow if ?selected=... in URL and hotel exists
+  useEffect(() => {
+    if (router.query.selected && visibleHotels.length > 0) {
+      const found = visibleHotels.find(
+        (hotel) => hotel.rentalId === router.query.selected
+      );
+      if (found) setSelectedHotel(found);
+    }
+  }, [router.query.selected, visibleHotels]);
+
+  // Helper to open InfoWindow and update query param
+  const handleMarkerClick = (rental: Rental) => {
+    setSelectedHotel(rental);
+    router.replace(
+      {
+        pathname: router.pathname,
+        query: { ...router.query, selected: rental.rentalId },
+      },
+      undefined,
+      { shallow: true }
+    );
+  };
+
+  // Helper to close InfoWindow and remove query param
+  const handleCloseInfoWindow = () => {
+    setSelectedHotel(null);
+    const { selected, ...rest } = router.query;
+    router.replace({ pathname: router.pathname, query: rest }, undefined, {
+      shallow: true,
+    });
+  };
+
   // Set default hotels immediately when component mounts
   useEffect(() => {
     const defaultBounds: MapBounds = {
@@ -72,10 +102,32 @@ export default function HotelMap({ full }: MapProps) {
       west: 106.8256,
     };
 
-    const defaultHotels = filterHotels(defaultBounds, "");
-    setVisibleHotels(defaultHotels.slice(0, 8)); // Show first 8 hotels as default
+    fetchHotelsInBounds(defaultBounds, "");
     setMapBounds(defaultBounds);
   }, []);
+
+  // Fetch hotels from API based on bounds and search
+  const fetchHotelsInBounds = async (bounds: MapBounds, query: string = "") => {
+    try {
+      setLoading(true);
+      const response = await apiService.getAllRentals({
+        lat: (bounds.north + bounds.south) / 2,
+        lng: (bounds.east + bounds.west) / 2,
+        radius: 10,
+        search: query || undefined,
+        limit: 50,
+      });
+
+      if (response.success) {
+        setVisibleHotels(response.rentals);
+      }
+    } catch (error) {
+      console.error("Error fetching hotels:", error);
+      setVisibleHotels([]);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   // Calculate distance between two coordinates
   const calculateDistance = (
@@ -97,41 +149,6 @@ export default function HotelMap({ full }: MapProps) {
     return R * c;
   };
 
-  // Filter hotels based on map bounds and search query
-  const filterHotels = useCallback(
-    (bounds: MapBounds | null, query: string = "") => {
-      if (!bounds) return [];
-
-      let filtered = dummyHotels.filter((rental) => {
-        const inBounds =
-          rental.lat >= bounds.south &&
-          rental.lat <= bounds.north &&
-          rental.lng >= bounds.west &&
-          rental.lng <= bounds.east;
-
-        const matchesSearch =
-          query === "" ||
-          rental.name.toLowerCase().includes(query.toLowerCase()) ||
-          rental.address.toLowerCase().includes(query.toLowerCase());
-
-        return inBounds && matchesSearch;
-      });
-
-      // Sort by distance from center
-      const centerLat = (bounds.north + bounds.south) / 2;
-      const centerLng = (bounds.east + bounds.west) / 2;
-
-      filtered.sort((a, b) => {
-        const distA = calculateDistance(centerLat, centerLng, a.lat, a.lng);
-        const distB = calculateDistance(centerLat, centerLng, b.lat, b.lng);
-        return distA - distB;
-      });
-
-      return filtered;
-    },
-    []
-  );
-
   // Update visible hotels when map bounds change
   const updateVisibleHotels = useCallback(() => {
     if (!map) return;
@@ -147,10 +164,9 @@ export default function HotelMap({ full }: MapProps) {
     };
 
     setMapBounds(mapBounds);
-    const filtered = filterHotels(mapBounds, searchQuery);
-    setVisibleHotels(filtered);
+    fetchHotelsInBounds(mapBounds, searchQuery);
     setCurrentPage(1);
-  }, [map, searchQuery, filterHotels]);
+  }, [map, searchQuery]);
 
   // Handle map events
   const onMapLoad = useCallback((map: google.maps.Map) => {
@@ -192,10 +208,8 @@ export default function HotelMap({ full }: MapProps) {
         west: 106.8256,
       };
 
-      const filtered = filterHotels(bounds, query);
-      setVisibleHotels(filtered);
+      fetchHotelsInBounds(bounds, query);
       setCurrentPage(1);
-      setLoading(false);
     }, 300);
   };
 
@@ -205,10 +219,8 @@ export default function HotelMap({ full }: MapProps) {
 
     setLoading(true);
     setTimeout(() => {
-      const filtered = filterHotels(mapBounds, searchQuery);
-      setVisibleHotels(filtered);
+      fetchHotelsInBounds(mapBounds, searchQuery);
       setCurrentPage(1);
-      setLoading(false);
     }, 500);
   };
 
@@ -226,20 +238,6 @@ export default function HotelMap({ full }: MapProps) {
 
   // Calculate total pages
   const totalPages = Math.ceil(visibleHotels.length / ITEMS_PER_PAGE);
-
-  useEffect(() => {
-    // Set default hotels immediately when component mounts
-    const defaultBounds: MapBounds = {
-      north: -6.1888,
-      south: -6.2288,
-      east: 106.8656,
-      west: 106.8256,
-    };
-
-    const defaultHotels = filterHotels(defaultBounds, "");
-    setVisibleHotels(defaultHotels.slice(0, 8)); // Show first 8 hotels as default
-    setMapBounds(defaultBounds);
-  }, [filterHotels]);
 
   useEffect(() => {
     if (selectedHotel && hotelRefs.current[selectedHotel.rentalId]) {
@@ -277,6 +275,7 @@ export default function HotelMap({ full }: MapProps) {
             zoom={13}
             onLoad={onMapLoad}
             onIdle={onMapIdle}
+            onClick={handleCloseInfoWindow} // <-- close InfoWindow when clicking on map
             options={{
               disableDefaultUI: false,
               zoomControl: true,
@@ -289,7 +288,7 @@ export default function HotelMap({ full }: MapProps) {
               <Marker
                 key={rental.rentalId}
                 position={{ lat: rental.lat, lng: rental.lng }}
-                onClick={() => setSelectedHotel(rental)}
+                onClick={() => handleMarkerClick(rental)}
                 icon={{
                   url:
                     "data:image/svg+xml;base64," +
@@ -312,64 +311,92 @@ export default function HotelMap({ full }: MapProps) {
             ))}
 
             {selectedHotel && (
-              <InfoWindow
-                position={{ lat: selectedHotel.lat, lng: selectedHotel.lng }}
-                onCloseClick={() => setSelectedHotel(null)}
-                options={{
-                  maxWidth: 200,
-                  pixelOffset:
-                    window.google &&
-                    window.google.maps &&
-                    typeof window.google.maps.Size === "function"
-                      ? new window.google.maps.Size(0, -10)
-                      : undefined,
-                }}
-              >
+              <>
+                {/* Overlay to close InfoWindow on outside click */}
                 <div
-                  className="p-0 max-w-sm cursor-pointer"
-                  style={{ borderRadius: 5, overflow: "hidden" }}
-                  onClick={() =>
-                    router.push(`/detail/${selectedHotel.rentalId}`)
-                  }
+                  style={{
+                    position: "fixed",
+                    top: 0,
+                    left: 0,
+                    width: "100vw",
+                    height: "100vh",
+                    zIndex: 1000,
+                    background: "transparent",
+                    pointerEvents: "none",
+                  }}
+                  onClick={handleCloseInfoWindow}
+                />
+                <InfoWindow
+                  position={{ lat: selectedHotel.lat, lng: selectedHotel.lng }}
+                  onCloseClick={handleCloseInfoWindow}
+                  options={{
+                    maxWidth: 200,
+                    pixelOffset:
+                      window.google &&
+                      window.google.maps &&
+                      typeof window.google.maps.Size === "function"
+                        ? new window.google.maps.Size(0, -10)
+                        : undefined,
+                  }}
                 >
-                  <div className="relative">
-                    <img
-                      src={selectedHotel.mainImage || DUMMY_IMAGE}
-                      alt={selectedHotel.name}
-                      className="w-full h-40 object-cover rounded-none"
-                      style={{ display: "block" }}
-                    />
+                  <div
+                    className="p-0 max-w-sm cursor-pointer"
+                    style={{
+                      borderRadius: 5,
+                      overflow: "hidden",
+                      pointerEvents: "auto",
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation(); // Prevent closing when clicking inside the card
+                      router.push(`/detail/${selectedHotel.rentalId}`);
+                    }}
+                  >
+                    <div className="relative">
+                      <img
+                        src={
+                          selectedHotel.mainImage ||
+                          "https://dummyimage.com/300x200/cccccc/ffffff.jpg&text=No+Image"
+                        }
+                        alt={selectedHotel.name}
+                        className="w-full h-40 object-cover rounded-none"
+                        style={{ display: "block" }}
+                      />
+                    </div>
+                    <div className="p-4">
+                      <h3 className="font-bold text-neutral-900 mb-1">
+                        {selectedHotel.name}
+                      </h3>
+                      {/* Star rating (static 3 stars for demo, replace with dynamic if needed) */}
+                      <div className="flex items-center mb-1">
+                        <span className="text-orange-400 text-lg mr-1">
+                          ★★★
+                        </span>
+                      </div>
+                      <p
+                        className="text-xs text-gray-600 mb-1 break-words break-all"
+                        style={{ textWrap: "wrap" }}
+                      >
+                        542 m dari area pilihanmu
+                      </p>
+                      <div className="text-xs text-gray-800 mb-2">
+                        <span className="font-bold">
+                          {selectedHotel.rating}
+                        </span>
+                        <span className="text-gray-500">
+                          {" "}
+                          ({selectedHotel.reviewCount})
+                        </span>
+                      </div>
+                      <div className="font-bold text-lg text-red-600 mb-1">
+                        {formatPrice(selectedHotel.price)}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        Belum termasuk pajak
+                      </div>
+                    </div>
                   </div>
-                  <div className="p-4">
-                    <h3 className="font-bold text-neutral-900 mb-1">
-                      {selectedHotel.name}
-                    </h3>
-                    {/* Star rating (static 3 stars for demo, replace with dynamic if needed) */}
-                    <div className="flex items-center mb-1">
-                      <span className="text-orange-400 text-lg mr-1">★★★</span>
-                    </div>
-                    <p
-                      className="text-xs text-gray-600 mb-1 break-words break-all"
-                      style={{ textWrap: "wrap" }}
-                    >
-                      542 m dari area pilihanmu
-                    </p>
-                    <div className="text-xs text-gray-800 mb-2">
-                      <span className="font-bold">{selectedHotel.rating}</span>
-                      <span className="text-gray-500">
-                        {" "}
-                        ({selectedHotel.reviewCount})
-                      </span>
-                    </div>
-                    <div className="font-bold text-lg text-red-600 mb-1">
-                      {formatPrice(selectedHotel.price)}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      Belum termasuk pajak
-                    </div>
-                  </div>
-                </div>
-              </InfoWindow>
+                </InfoWindow>
+              </>
             )}
           </GoogleMap>
         </LoadScript>
@@ -436,7 +463,10 @@ export default function HotelMap({ full }: MapProps) {
                           <div className="flex gap-3">
                             <div className="w-20 h-20 bg-gray-200 rounded-lg flex-shrink-0 flex items-center justify-center overflow-hidden">
                               <img
-                                src={rental.mainImage || DUMMY_IMAGE}
+                                src={
+                                  rental.mainImage ||
+                                  "https://dummyimage.com/300x200/cccccc/ffffff.jpg&text=No+Image"
+                                }
                                 alt={rental.name}
                                 className="object-cover w-full h-full rounded-lg"
                                 onError={(e) => {

@@ -4,9 +4,9 @@ import CardLayout from "../components/Layout/CardLayout";
 import { useState, useEffect } from "react";
 import HotelMap from "../components/Layout/Map";
 import { useRouter } from "next/router";
-import { dummyHotels, DUMMY_IMAGE } from "@/data/dummyHotels";
 import Link from "next/link";
 import SkeletonCardLayout from "@/components/Layout/SkeletonCardLayout";
+import { apiService, Rental } from "@/lib/api";
 
 const tabs = [
   { name: "For Ahmad", active: true },
@@ -20,6 +20,52 @@ export default function Main() {
   const router = useRouter();
   const [visibleCount, setVisibleCount] = useState(8);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [rentals, setRentals] = useState<Rental[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+
+  // Fetch rentals on component mount
+  useEffect(() => {
+    fetchRentals();
+  }, []);
+
+  const fetchRentals = async (page = 1, append = false) => {
+    try {
+      setLoading(true);
+      const response = await apiService.getAllRentals({
+        page,
+        limit: 20,
+      });
+
+      if (response.success) {
+        if (append) {
+          setRentals((prev) => [...prev, ...response.rentals]);
+        } else {
+          setRentals(response.rentals);
+        }
+        setHasMore(page < response.pagination.totalPages);
+        setCurrentPage(page);
+      }
+    } catch (err) {
+      console.error("Error fetching rentals:", err);
+      setError("Failed to load rentals");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadMore = async () => {
+    if (isLoadingMore || !hasMore) return;
+
+    setIsLoadingMore(true);
+    try {
+      await fetchRentals(currentPage + 1, true);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
 
   useEffect(() => {
     if (showMap) {
@@ -37,19 +83,44 @@ export default function Main() {
       if (
         window.innerHeight + window.scrollY >=
           document.body.offsetHeight - 200 &&
-        visibleCount < dummyHotels.length &&
-        !isLoadingMore
+        hasMore &&
+        !isLoadingMore &&
+        !loading
       ) {
-        setIsLoadingMore(true);
-        setTimeout(() => {
-          setVisibleCount((prev) => Math.min(prev + 8, dummyHotels.length));
-          setIsLoadingMore(false);
-        }, 700); // simulasi loading
+        loadMore();
       }
     };
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
-  }, [visibleCount, isLoadingMore]);
+  }, [hasMore, isLoadingMore, loading, currentPage]);
+
+  if (loading && rentals.length === 0) {
+    return (
+      <div className="bg-gray-50 min-h-screen">
+        <div className="max-w-7xl mx-auto px-4 py-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {Array.from({ length: 8 }).map((_, idx) => (
+              <SkeletonCardLayout key={`skeleton-${idx}`} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-gray-50 min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-semibold text-gray-800 mb-2">
+            Error Loading Rentals
+          </h2>
+          <p className="text-gray-600 mb-4">{error}</p>
+          <Button onClick={() => fetchRentals()}>Try Again</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-gray-50 min-h-screen">
@@ -103,24 +174,27 @@ export default function Main() {
 
         {/* Product Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {dummyHotels.slice(0, visibleCount).map((hotel) => (
+          {rentals.slice(0, visibleCount).map((rental) => (
             <Link
-              key={hotel.rentalId}
-              href={`/detail/${hotel.rentalId}`}
+              key={rental.rentalId}
+              href={`/detail/${rental.rentalId}`}
               passHref
               legacyBehavior
             >
               <a style={{ display: "block", height: "100%" }}>
                 <CardLayout
-                  image={hotel.mainImage || DUMMY_IMAGE}
-                  name={hotel.name}
-                  address={hotel.address}
-                  rating={hotel.rating}
-                  reviewCount={hotel.reviewCount}
-                  price={hotel.price}
-                  originalPrice={hotel.originalPrice}
-                  description={hotel.description}
-                  facilities={hotel.facilities || []}
+                  image={
+                    rental.mainImage ||
+                    "https://dummyimage.com/300x200/cccccc/ffffff.jpg&text=No+Image"
+                  }
+                  name={rental.name}
+                  address={rental.address}
+                  rating={rental.rating}
+                  reviewCount={rental.reviewCount}
+                  price={rental.price}
+                  originalPrice={rental.originalPrice}
+                  description={rental.description}
+                  facilities={rental.facilities || []}
                 />
               </a>
             </Link>
@@ -130,6 +204,18 @@ export default function Main() {
               <SkeletonCardLayout key={`skeleton-${idx}`} />
             ))}
         </div>
+
+        {/* Load More Button */}
+        {hasMore && !isLoadingMore && (
+          <div className="text-center mt-8">
+            <Button
+              onClick={loadMore}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              Load More
+            </Button>
+          </div>
+        )}
       </div>
     </div>
   );
